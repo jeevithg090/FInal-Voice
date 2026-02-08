@@ -24,7 +24,7 @@ bash piper_ta_rocm71_train.sh
 ## Important Env Vars
 
 - `WORK_ROOT` (default: `/scratch/piper_tamil`)
-- `MAX_STEPS` (default: `120000`)
+- `MAX_STEPS` (default: `120000`, treated as additional steps when base checkpoint step is larger)
 - `BATCH_SIZE` (default: `48`)
 - `VAL_CHECK_INTERVAL` (default: `50`)
 - `INCLUDE_ADDITIONAL` (`0` default, set `1` to include Phase2 Additional_data)

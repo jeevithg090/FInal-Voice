@@ -146,7 +146,7 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install --index-url https://download.pytorch.org/whl/rocm7.1 torch
 python -m pip install \
   lightning tensorboard tensorboardX "jsonargparse[signatures]>=4.27.7" \
-  pathvalidate onnx "pysilero-vad<3" cython scikit-build "librosa<1" onnxruntime
+  pathvalidate onnx onnxscript "pysilero-vad<3" cython scikit-build "librosa<1" onnxruntime
 python -m pip install -e . --no-deps
 
 ./build_monotonic_align.sh
@@ -273,6 +273,23 @@ if [[ ! -s "${BASE_CKPT}" ]]; then
 fi
 
 TRAIN_LOG="${RUN_ROOT}/train_$(date +%Y%m%d_%H%M%S).log"
+EFFECTIVE_MAX_STEPS="${MAX_STEPS}"
+
+# When resuming from a pretrained checkpoint with a large global step,
+# make MAX_STEPS behave like "additional steps" if needed.
+if [[ "${BASE_CKPT_URL}" =~ step%3D([0-9]+) ]]; then
+  BASE_CKPT_STEP="${BASH_REMATCH[1]}"
+elif [[ "${BASE_CKPT_URL}" =~ step=([0-9]+) ]]; then
+  BASE_CKPT_STEP="${BASH_REMATCH[1]}"
+else
+  BASE_CKPT_STEP=""
+fi
+
+if [[ -n "${BASE_CKPT_STEP}" ]] && (( MAX_STEPS <= BASE_CKPT_STEP )); then
+  EFFECTIVE_MAX_STEPS="$((BASE_CKPT_STEP + MAX_STEPS))"
+  echo "MAX_STEPS=${MAX_STEPS} is <= base checkpoint step ${BASE_CKPT_STEP}."
+  echo "Using EFFECTIVE_MAX_STEPS=${EFFECTIVE_MAX_STEPS} (base step + additional steps)."
+fi
 
 python -m piper.train fit \
   --data.voice_name "${VOICE_NAME}" \
@@ -290,7 +307,7 @@ python -m piper.train fit \
   --trainer.accelerator gpu \
   --trainer.devices 1 \
   --trainer.precision "${PRECISION}" \
-  --trainer.max_steps "${MAX_STEPS}" \
+  --trainer.max_steps "${EFFECTIVE_MAX_STEPS}" \
   --trainer.val_check_interval "${VAL_CHECK_INTERVAL}" \
   --trainer.log_every_n_steps 20 \
   2>&1 | tee "${TRAIN_LOG}"
