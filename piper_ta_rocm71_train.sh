@@ -104,9 +104,15 @@ if [[ "${WORK_ROOT}" == /scratch/* ]] && ! mountpoint -q /scratch; then
 fi
 
 # ---------------- System packages ----------------
-${SUDO} apt-get update
-${SUDO} DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  git build-essential cmake ninja-build python3-venv ffmpeg libsndfile1 unzip rsync curl tmux espeak-ng
+if [[ -n "${SUDO}" ]]; then
+  ${SUDO} apt-get update
+  ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    git build-essential cmake ninja-build python3-venv ffmpeg libsndfile1 unzip rsync curl tmux espeak-ng
+else
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    git build-essential cmake ninja-build python3-venv ffmpeg libsndfile1 unzip rsync curl tmux espeak-ng
+fi
 
 mkdir -p "${WORK_ROOT}"
 
