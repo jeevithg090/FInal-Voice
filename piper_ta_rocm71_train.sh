@@ -31,6 +31,36 @@ else
   SUDO="sudo"
 fi
 
+wait_for_apt_locks() {
+  local waited=0
+  local max_wait=1800
+  while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; do
+    if (( waited == 0 )); then
+      echo "Waiting for apt/dpkg lock (likely unattended-upgrades) ..."
+    fi
+    sleep 5
+    waited=$((waited + 5))
+    if (( waited >= max_wait )); then
+      echo "ERROR: Timed out waiting for apt/dpkg locks."
+      return 1
+    fi
+  done
+}
+
+run_apt_cmd() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    wait_for_apt_locks || return 1
+    if "$@"; then
+      return 0
+    fi
+    echo "APT command failed (attempt ${attempt}/5), retrying in 10s ..."
+    sleep 10
+  done
+  echo "ERROR: APT command failed after retries: $*"
+  return 1
+}
+
 is_valid_zip_archive() {
   local archive_path="$1"
   [[ -s "${archive_path}" ]] || return 1
@@ -118,12 +148,12 @@ fi
 
 # ---------------- System packages ----------------
 if [[ -n "${SUDO}" ]]; then
-  ${SUDO} apt-get update
-  ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  run_apt_cmd ${SUDO} apt-get update
+  run_apt_cmd ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git build-essential cmake ninja-build python3-venv ffmpeg libsndfile1 unzip rsync curl tmux espeak-ng
 else
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  run_apt_cmd apt-get update
+  run_apt_cmd env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git build-essential cmake ninja-build python3-venv ffmpeg libsndfile1 unzip rsync curl tmux espeak-ng
 fi
 
