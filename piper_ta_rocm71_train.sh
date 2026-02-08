@@ -5,7 +5,7 @@ set -euo pipefail
 WORK_ROOT="${WORK_ROOT:-/scratch/piper_tamil}"
 DATA_ZIP_DIR="${DATA_ZIP_DIR:-/root/tamil_female_mono}"
 DATASET_ARCHIVE="${DATASET_ARCHIVE:-${DATA_ZIP_DIR}/tamil_female_mono.zip}"
-DATASET_FILE_ID="${DATASET_FILE_ID:-1lTi5J7iX2dlo8GB16OhnDdqXlJyfuHjI}"
+DATASET_BASE_URL="https://drive.usercontent.google.com/download?id=1lTi5J7iX2dlo8GB16OhnDdqXlJyfuHjI&export=download&authuser=0"
 PIPER_REPO_DIR="${PIPER_REPO_DIR:-${WORK_ROOT}/piper1-gpl}"
 
 VOICE_NAME="${VOICE_NAME:-ta_IN_iitm_female_s1}"
@@ -45,7 +45,7 @@ download_gdrive_archive() {
   local uuid
   local download_url
 
-  base_url="https://drive.usercontent.google.com/download?id=${DATASET_FILE_ID}&export=download&authuser=0"
+  base_url="${DATASET_BASE_URL}"
   html="$(curl -L -sS "${base_url}")"
 
   confirm="$(printf "%s" "${html}" | sed -n 's/.*name="confirm" value="\([^"]*\)".*/\1/p' | head -n1)"
@@ -53,12 +53,12 @@ download_gdrive_archive() {
 
   if [[ -z "${confirm}" || -z "${uuid}" ]]; then
     echo "ERROR: Could not extract Google Drive confirm token/uuid."
-    echo "Set DATASET_ARCHIVE manually or verify DATASET_FILE_ID."
+    echo "Set DATASET_ARCHIVE manually or verify DATASET_BASE_URL."
     return 1
   fi
 
   download_url="${base_url}&confirm=${confirm}&uuid=${uuid}"
-  echo "Downloading dataset archive from Google Drive ID ${DATASET_FILE_ID} ..."
+  echo "Downloading dataset archive from hard-coded Google Drive URL ..."
   curl -L --fail --retry 5 --retry-delay 5 -C - -o "${DATASET_ARCHIVE}" "${download_url}"
 
   if ! head -c 4 "${DATASET_ARCHIVE}" | xxd -p | grep -qi '^504b0304'; then

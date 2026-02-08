@@ -22,12 +22,15 @@ bash piper_ta_rocm71_train.sh
 
 ## Important Env Vars
 
-- `DATASET_FILE_ID` (default: `1lTi5J7iX2dlo8GB16OhnDdqXlJyfuHjI`)
 - `WORK_ROOT` (default: `/scratch/piper_tamil`)
 - `MAX_STEPS` (default: `120000`)
 - `BATCH_SIZE` (default: `48`)
 - `VAL_CHECK_INTERVAL` (default: `50`)
 - `INCLUDE_ADDITIONAL` (`0` default, set `1` to include Phase2 Additional_data)
+
+Google Drive URL is hard-coded in the script:
+
+`https://drive.usercontent.google.com/download?id=1lTi5J7iX2dlo8GB16OhnDdqXlJyfuHjI&export=download&authuser=0`
 
 Example:
 
