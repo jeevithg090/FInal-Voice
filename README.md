@@ -5,6 +5,7 @@ This repo contains a single script to train Piper Tamil on ROCm 7.1 (Ubuntu 24.0
 - `IndicTTS_Phase3_Tamil_fem_Speaker1_mono.zip`
 
 The script auto-downloads `tamil_female_mono.zip` from Google Drive using `curl` + confirm token (`confirm` + `uuid`), then extracts only required phase zips.
+If an existing `tamil_female_mono.zip` is corrupted/partial, the script automatically deletes it and re-downloads.
 
 ## One Command (on your server console)
 

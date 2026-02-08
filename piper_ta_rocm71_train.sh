@@ -31,12 +31,24 @@ else
   SUDO="sudo"
 fi
 
+is_valid_zip_archive() {
+  local archive_path="$1"
+  [[ -s "${archive_path}" ]] || return 1
+  head -c 4 "${archive_path}" | xxd -p | grep -qi '^504b0304' || return 1
+  unzip -l "${archive_path}" >/dev/null 2>&1 || return 1
+  return 0
+}
+
 download_gdrive_archive() {
   mkdir -p "${DATA_ZIP_DIR}"
 
   if [[ -s "${DATASET_ARCHIVE}" ]]; then
-    echo "Using existing dataset archive: ${DATASET_ARCHIVE}"
-    return 0
+    if is_valid_zip_archive "${DATASET_ARCHIVE}"; then
+      echo "Using existing dataset archive: ${DATASET_ARCHIVE}"
+      return 0
+    fi
+    echo "Existing dataset archive is invalid/corrupted, re-downloading: ${DATASET_ARCHIVE}"
+    rm -f "${DATASET_ARCHIVE}"
   fi
 
   local base_url
@@ -59,10 +71,11 @@ download_gdrive_archive() {
 
   download_url="${base_url}&confirm=${confirm}&uuid=${uuid}"
   echo "Downloading dataset archive from hard-coded Google Drive URL ..."
+  rm -f "${DATASET_ARCHIVE}"
   curl -L --fail --retry 5 --retry-delay 5 -C - -o "${DATASET_ARCHIVE}" "${download_url}"
 
-  if ! head -c 4 "${DATASET_ARCHIVE}" | xxd -p | grep -qi '^504b0304'; then
-    echo "ERROR: Downloaded file is not a ZIP (missing PK header): ${DATASET_ARCHIVE}"
+  if ! is_valid_zip_archive "${DATASET_ARCHIVE}"; then
+    echo "ERROR: Downloaded file is not a valid ZIP archive: ${DATASET_ARCHIVE}"
     return 1
   fi
 }
