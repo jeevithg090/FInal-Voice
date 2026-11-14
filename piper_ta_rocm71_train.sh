@@ -212,7 +212,11 @@ validate_config() {
   [[ -z "${errors}" ]] && return 0
   error "Invalid configuration:"
   printf '  - %s\n' "${errors//$'\n'/$'\n'  - }" >&2
-  printf 'Fix the values above (shell or %s) and re-run.\n' "${ENV_FILE}" >&2
+  if [[ -f "${ENV_FILE}" ]]; then
+    printf 'Fix the values above (in the shell or %s) and re-run.\n' "${ENV_FILE}" >&2
+  else
+    printf 'Fix the values above and re-run.\n' >&2
+  fi
   exit 1
 }
 
