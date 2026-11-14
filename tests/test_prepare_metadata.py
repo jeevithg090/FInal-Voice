@@ -92,6 +92,7 @@ def test_process_jobs_pairs_audio_and_text(raw_dir: Path, tmp_path: Path) -> Non
     ]
     assert result.skipped_without_text == 2
     assert result.total_seconds == pytest.approx(3.5)
+    assert result.rows_per_source == {"phase2": 2, "phase3_s1": 1}
     for rel, _ in result.rows:
         assert (audio / rel).is_file()
     assert not (audio / "phase2" / "p2_999.wav").exists()
@@ -121,7 +122,10 @@ def test_main_success(raw_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixtu
     argv = ["--raw-dir", str(raw_dir), "--audio-dir", str(tmp_path / "audio"), "--metadata", str(meta)]
     assert pm.main([*argv, "--min-rows", "3"]) == 0
     assert meta.read_text(encoding="utf-8").count("\n") == 3
-    assert "rows: 3" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "rows: 3" in captured.out
+    assert "hours: 0.00 (0h 00m of audio)" in captured.out
+    assert "phase2" in captured.err  # per-source progress goes to stderr
 
 
 def test_main_too_few_rows(raw_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -129,7 +133,9 @@ def test_main_too_few_rows(raw_dir: Path, tmp_path: Path, capsys: pytest.Capture
     argv = ["--raw-dir", str(raw_dir), "--audio-dir", str(tmp_path / "audio"), "--metadata", str(meta)]
     assert pm.main(argv) == 1
     assert not meta.exists()
-    assert "Too few utterances" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Too few utterances" in err
+    assert "--min-rows" in err
 
 
 def test_main_missing_archive(tmp_path: Path) -> None:

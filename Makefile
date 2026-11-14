@@ -1,4 +1,4 @@
-SHELL_FILES := piper_ta_rocm71_train.sh lib/common.sh tests/test_common.sh
+SHELL_FILES := piper_ta_rocm71_train.sh lib/common.sh tests/test_common.sh tests/test_cli.sh
 PY_FILES := scripts tests
 
 .PHONY: help lint format test check
@@ -22,6 +22,7 @@ format:
 
 test:
 	bash tests/test_common.sh
+	bash tests/test_cli.sh
 	python3 -m pytest
 
 check: lint test

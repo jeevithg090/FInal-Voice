@@ -21,7 +21,7 @@ import sys
 import wave
 import zipfile
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Festival prompt line: ( utt_id "transcript text" )
@@ -46,6 +46,7 @@ class Result:
     rows: list[tuple[str, str]]
     total_seconds: float
     skipped_without_text: int
+    rows_per_source: dict[str, int] = field(default_factory=dict)
 
 
 def normalize_text(text: str) -> str:
@@ -100,8 +101,10 @@ def process_jobs(jobs: Iterable[Job], audio_dir: Path) -> Result:
     rows: list[tuple[str, str]] = []
     total_seconds = 0.0
     skipped = 0
+    per_source: dict[str, int] = {}
 
     for job in jobs:
+        before = len(rows)
         if not job.archive.is_file():
             raise FileNotFoundError(f"Missing archive: {job.archive}")
         with zipfile.ZipFile(job.archive) as zf:
@@ -128,9 +131,16 @@ def process_jobs(jobs: Iterable[Job], audio_dir: Path) -> Result:
                     shutil.copyfileobj(src, out)
                 total_seconds += wav_duration_seconds(dst)
                 rows.append((dst.relative_to(audio_dir).as_posix(), text))
+        per_source[job.out_subdir] = per_source.get(job.out_subdir, 0) + len(rows) - before
+        print(f"  {job.out_subdir:<18} {per_source[job.out_subdir]:>6} utterances", file=sys.stderr)
 
     rows.sort(key=lambda row: row[0])
-    return Result(rows=rows, total_seconds=total_seconds, skipped_without_text=skipped)
+    return Result(
+        rows=rows,
+        total_seconds=total_seconds,
+        skipped_without_text=skipped,
+        rows_per_source=per_source,
+    )
 
 
 def write_metadata(rows: Sequence[tuple[str, str]], meta_path: Path) -> None:
@@ -169,7 +179,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if len(result.rows) < args.min_rows:
         print(
-            f"ERROR: Too few utterances: {len(result.rows)} (expected at least {args.min_rows})",
+            f"ERROR: Too few utterances: {len(result.rows)} (expected at least {args.min_rows}).\n"
+            "Check that the archives are the IndicTTS Tamil female mono release, "
+            "or lower --min-rows (MIN_ROWS) for a small test dataset.",
             file=sys.stderr,
         )
         return 1
@@ -178,7 +190,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"metadata: {args.metadata}")
     print(f"rows: {len(result.rows)}")
     print(f"skipped (no transcript): {result.skipped_without_text}")
-    print(f"hours: {result.total_seconds / 3600:.2f}")
+    hours, rem = divmod(round(result.total_seconds), 3600)
+    print(f"hours: {result.total_seconds / 3600:.2f} ({hours}h {rem // 60:02d}m of audio)")
     return 0
 
 

@@ -177,5 +177,38 @@ ENV
 read -r PASS FAIL <"${TMP}/subshell_counts"
 assert_ok "missing env file is a no-op" load_env_file "${TMP}/does-not-exist.env"
 
+# --- format_duration ---
+assert_eq "seconds only" 45s "$(format_duration 45)"
+assert_eq "minutes" "3m 05s" "$(format_duration 185)"
+assert_eq "hours" "2h 03m 05s" "$(format_duration 7385)"
+assert_eq "zero" 0s "$(format_duration 0)"
+
+# --- validators ---
+assert_ok "uint zero" is_uint 0
+assert_fails "uint negative" is_uint -1
+assert_fails "uint decimal" is_uint 1.5
+assert_ok "positive int" is_positive_int 48
+assert_ok "positive int leading zero" is_positive_int 08
+assert_fails "positive int zero" is_positive_int 0
+assert_fails "positive int text" is_positive_int abc
+assert_ok "bool 0" is_bool01 0
+assert_ok "bool 1" is_bool01 1
+assert_fails "bool yes" is_bool01 yes
+assert_ok "fraction 0.05" is_fraction 0.05
+assert_ok "fraction .5" is_fraction .5
+assert_fails "fraction zero" is_fraction 0.0
+assert_fails "fraction one" is_fraction 1
+assert_fails "fraction above one" is_fraction 1.5
+assert_fails "fraction text" is_fraction abc
+
+# --- nearest_existing_dir / free_space_gib ---
+assert_eq "nearest existing dir" "${TMP}" "$(nearest_existing_dir "${TMP}/does/not/exist")"
+assert_eq "existing dir is itself" "${TMP}" "$(nearest_existing_dir "${TMP}")"
+free_gib="$(free_space_gib "${TMP}/nope")"
+assert_ok "free space is a number" is_uint "${free_gib}"
+
+# --- colours are off when not attached to a terminal ---
+assert_eq "no colour codes when piped" "" "$(setup_colors 1 && printf '%s' "${C_RED}${C_RESET}")"
+
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 ((FAIL == 0))
