@@ -7,13 +7,89 @@
 # shellcheck disable=SC2034  # PIPER_COMMON_LOADED is read by callers.
 PIPER_COMMON_LOADED=1
 
+# Terminal styling. Colours are used only when every given file descriptor
+# (default: 2, stderr) is a terminal and NO_COLOR (https://no-color.org) is
+# unset; otherwise every code is empty.
+# Usage: setup_colors [fd...]
+setup_colors() {
+  local fd use=1
+  (($#)) || set -- 2
+  for fd in "$@"; do [[ -t "${fd}" ]] || use=0; done
+  [[ -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || use=0
+  if ((use)); then
+    C_RESET=$'\e[0m' C_BOLD=$'\e[1m' C_DIM=$'\e[2m'
+    C_RED=$'\e[31m' C_GREEN=$'\e[32m' C_YELLOW=$'\e[33m' C_BLUE=$'\e[34m'
+  else
+    C_RESET='' C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_BLUE=''
+  fi
+}
+setup_colors
+
 log() {
-  printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2
+  printf '%s[%s]%s %s\n' "${C_DIM}" "$(date +%H:%M:%S)" "${C_RESET}" "$*" >&2
+}
+
+warn() {
+  printf '%sWARNING:%s %s\n' "${C_YELLOW}${C_BOLD}" "${C_RESET}" "$*" >&2
+}
+
+# Print an error without exiting (for functions that return a status).
+error() {
+  printf '%sERROR:%s %s\n' "${C_RED}${C_BOLD}" "${C_RESET}" "$*" >&2
 }
 
 die() {
-  printf 'ERROR: %s\n' "$*" >&2
+  error "$@"
   exit 1
+}
+
+# Print a stage banner such as "==> [2/6] Download dataset".
+# Usage: stage_header <index> <total> <title>
+stage_header() {
+  printf '\n%s==> [%s/%s] %s%s\n' "${C_BLUE}${C_BOLD}" "$1" "$2" "$3" "${C_RESET}" >&2
+}
+
+# Format a number of seconds as "45s", "3m 05s" or "2h 03m 05s".
+format_duration() {
+  local total="$1" h m s
+  h=$((total / 3600))
+  m=$((total % 3600 / 60))
+  s=$((total % 60))
+  if ((h > 0)); then
+    printf '%dh %02dm %02ds\n' "${h}" "${m}" "${s}"
+  elif ((m > 0)); then
+    printf '%dm %02ds\n' "${m}" "${s}"
+  else
+    printf '%ds\n' "${s}"
+  fi
+}
+
+# --- Value validators (return 0 when valid) ---
+is_uint() { [[ "$1" =~ ^[0-9]+$ ]]; }
+is_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && (("10#$1" > 0)); }
+is_bool01() { [[ "$1" == 0 || "$1" == 1 ]]; }
+# A decimal strictly between 0 and 1, e.g. 0.05.
+is_fraction() {
+  [[ "$1" =~ ^0?\.[0-9]+$ ]] && [[ ! "$1" =~ ^0?\.0+$ ]]
+}
+
+# Print the closest existing ancestor directory of <path> (or <path> itself).
+nearest_existing_dir() {
+  local path="$1"
+  while [[ ! -d "${path}" && "${path}" != "/" && -n "${path}" ]]; do
+    path="$(dirname "${path}")"
+  done
+  printf '%s\n' "${path:-/}"
+}
+
+# Print the free space, in whole GiB, of the filesystem that holds <path>
+# (or would hold it, if it does not exist yet).
+free_space_gib() {
+  local dir kib
+  dir="$(nearest_existing_dir "$1")"
+  kib="$(df -Pk "${dir}" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+  [[ -n "${kib}" ]] || return 1
+  printf '%s\n' "$((kib / 1024 / 1024))"
 }
 
 # Wait until no process holds the apt/dpkg locks (e.g. unattended-upgrades).
@@ -30,7 +106,8 @@ wait_for_apt_locks() {
     sleep 5
     waited=$((waited + 5))
     if ((waited >= max_wait)); then
-      printf 'ERROR: Timed out waiting for apt/dpkg locks.\n' >&2
+      error "Timed out after ${max_wait}s waiting for apt/dpkg locks." \
+        "Check 'ps aux | grep -E \"apt|dpkg\"' and re-run."
       return 1
     fi
   done
@@ -50,7 +127,7 @@ run_apt_cmd() {
     log "APT command failed (attempt ${attempt}/${attempts}), retrying in ${delay}s ..."
     sleep "${delay}"
   done
-  printf 'ERROR: APT command failed after retries: %s\n' "$*" >&2
+  error "APT command failed after ${attempts} attempts: $*"
   return 1
 }
 
@@ -129,7 +206,8 @@ download_gdrive_zip() {
   log "Requesting dataset archive from Google Drive ..."
   if ! curl -L --fail -sS --retry 5 --retry-delay 5 -o "${page}" "${url}"; then
     rm -f "${page}"
-    printf 'ERROR: Failed to fetch the dataset URL.\n' >&2
+    error "Failed to fetch the dataset URL (${url})." \
+      "Check network access to Google Drive, or download the archive yourself and set DATASET_ARCHIVE."
     return 1
   fi
 
@@ -142,22 +220,24 @@ download_gdrive_zip() {
     uuid="$(html_input_value uuid <"${page}")"
     rm -f "${page}"
     if [[ -z "${confirm}" || -z "${uuid}" ]]; then
-      printf 'ERROR: Could not extract Google Drive confirm token/uuid.\n' >&2
-      printf 'Download the archive manually and set DATASET_ARCHIVE, or check DATASET_URL.\n' >&2
+      error "Google Drive did not return the file or a download confirmation page." \
+        "The link may be private, deleted or over its download quota." \
+        "Download the archive manually and set DATASET_ARCHIVE, or check DATASET_URL."
       return 1
     fi
     # A previous interrupted run leaves ${tmp} behind; -C - resumes it.
     log "Downloading dataset archive (resumable; this can take a while) ..."
     if ! curl -L --fail --retry 5 --retry-delay 5 -C - -o "${tmp}" \
       "${url}&confirm=${confirm}&uuid=${uuid}"; then
-      printf 'ERROR: Dataset download failed; re-run to resume.\n' >&2
+      error "Dataset download failed; re-run the script to resume from ${tmp}."
       return 1
     fi
   fi
 
   if ! is_valid_zip_archive "${tmp}"; then
     rm -f "${tmp}"
-    printf 'ERROR: Downloaded file is not a valid ZIP archive (removed).\n' >&2
+    error "Downloaded file is not a valid ZIP archive and was removed." \
+      "Check DATASET_URL, or download the archive manually and set DATASET_ARCHIVE."
     return 1
   fi
   mv -f "${tmp}" "${dest}"
@@ -180,7 +260,7 @@ effective_max_steps() {
   local max_steps="$1"
   local base_step="${2:-}"
   [[ "${max_steps}" =~ ^[0-9]+$ ]] || {
-    printf 'ERROR: MAX_STEPS must be a non-negative integer, got: %s\n' "${max_steps}" >&2
+    error "MAX_STEPS must be a non-negative integer, got: ${max_steps}"
     return 1
   }
   if [[ -n "${base_step}" ]] && ((max_steps <= base_step)); then
